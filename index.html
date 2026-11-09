@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Giám Sát Té Ngã</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --accent-blue: #38bdf8;
+            --accent-red: #ef4444;
+            --accent-green: #22c55e;
+            --accent-yellow: #eab308;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--card-bg);
+            padding: 15px 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 20px;
+            color: var(--accent-blue);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: #0f172a;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--accent-red);
+            box-shadow: 0 0 8px var(--accent-red);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.online {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
+        .grid-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        .card-title {
+            font-size: 13px;
+            color: var(--text-sub);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .sensor-val {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--accent-blue);
+        }
+
+        .status-box {
+            font-size: 16px;
+            font-weight: bold;
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+
+        .status-normal { background-color: rgba(34, 197, 94, 0.2); color: var(--accent-green); }
+        .status-alert { background-color: rgba(239, 68, 68, 0.2); color: var(--accent-red); animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+
+        .control-panel {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 15px 25px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            background-color: #334155;
+            color: white;
+            border: 2px solid transparent;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover { background-color: #475569; }
+        .btn.active-led { border-color: var(--accent-yellow); background-color: rgba(234, 179, 8, 0.2); color: #fef08a; }
+        .btn.active-buzzer { border-color: var(--accent-red); background-color: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 20px;
+        }
+
+        .chart-card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>HỆ THỐNG GIÁM SÁT TÉ NGÃ (ESP32 & MPU6050)</h1>
+                <p style="margin: 3px 0 0 0; font-size: 12px; color: var(--text-sub);">Giao diện Realtime (HiveMQ WebSocket)</p>
+            </div>
+            <div class="connection-status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Đang kết nối...</span>
+            </div>
+        </div>
+
+        <div class="grid-cards">
+            <div class="card">
+                <div class="card-title">Gia Tốc Tổng</div>
+                <div class="sensor-val val-accel">0.00 g</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Góc Nghiêng Pitch</div>
+                <div class="sensor-val val-pitch">0.0°</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Góc Nghiêng Roll</div>
+                <div class="sensor-val val-roll">0.0°</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Trạng Thái Hệ Thống</div>
+                <div style="margin-top: 5px;">
+                    <span class="status-box status-normal val-status">BÌNH THƯỜNG</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <span style="font-weight: 600; color: var(--text-sub);">ĐIỀU KHIỂN THỦ CÔNG (MANUAL):</span>
+            <div class="btn-group">
+                <button class="btn btn-led" onclick="toggleLED()">Bật/Tắt Đèn LED</button>
+                <button class="btn btn-buzzer" onclick="toggleBuzzer()">Bật/Tắt Còi</button>
+            </div>
+        </div>
+
+        <div class="charts-container">
+            <div class="chart-card">
+                <canvas id="accelChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="angleChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ledState = false;
+        let buzzerState = false;
+
+        const dotEl = document.getElementById('statusDot');
+        const textEl = document.getElementById('statusText');
+
+        // Cấu hình kết nối khớp với HiveMQ WebSocket của ESP32
+        const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+            clientId: 'WebClient_' + Math.random().toString(16).substring(2, 8),
+            clean: true
+        });
+
+        const ctxAccel = document.getElementById('accelChart').getContext('2d');
+        const accelChart = new Chart(ctxAccel, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Gia tốc tổng (g)', data: [], borderColor: '#38bdf8', borderWidth: 2, fill: false, tension: 0.1 }] },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Biểu đồ Gia tốc thời gian thực', color: '#f8fafc' } },
+                scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' }, min: 0, max: 4 } }
+            }
+        });
+
+        const ctxAngle = document.getElementById('angleChart').getContext('2d');
+        const angleChart = new Chart(ctxAngle, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Pitch (°)', data: [], borderColor: '#22c55e', borderWidth: 2, fill: false },
+                    { label: 'Roll (°)', data: [], borderColor: '#eab308', borderWidth: 2, fill: false }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Biểu đồ Góc nghiêng thời gian thực', color: '#f8fafc' } },
+                scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' }, min: -90, max: 90 } }
+            }
+        });
+
+        client.on('connect', () => {
+            console.log('Đã kết nối MQTT thành công!');
+            dotEl.classList.add('online');
+            textEl.innerText = 'ONLINE (Đã kết nối)';
+            client.subscribe('falldetect/telemetry');
+        });
+
+        client.on('offline', () => {
+            dotEl.classList.remove('online');
+            textEl.innerText = 'OFFLINE (Mất kết nối)';
+        });
+
+        client.on('error', (err) => {
+            dotEl.classList.remove('online');
+            textEl.innerText = 'LỖI KẾT NỐI';
+        });
+
+        client.on('message', (topic, payload) => {
+            if (topic === 'falldetect/telemetry') {
+                try {
+                    const data = JSON.parse(payload.toString());
+                    const timeLabel = new Date().toLocaleTimeString();
+
+                    const giaToc = data.gia_toc;
+                    const gocPitch = data.goc_pitch;
+                    const gocRoll = data.goc_roll;
+
+                    document.querySelector('.val-accel').innerText = giaToc.toFixed(2) + ' g';
+                    document.querySelector('.val-pitch').innerText = gocPitch.toFixed(1) + '°';
+                    document.querySelector('.val-roll').innerText = gocRoll.toFixed(1) + '°';
+
+                    const statusEl = document.querySelector('.val-status');
+                    if (giaToc > 2.5 || Math.abs(gocPitch) > 60 || Math.abs(gocRoll) > 60) {
+                        statusEl.innerText = "CẢNH BÁO TÉ NGÃ!";
+                        statusEl.className = "status-box status-alert val-status";
+                    } else {
+                        statusEl.innerText = "BÌNH THƯỜNG";
+                        statusEl.className = "status-box status-normal val-status";
+                    }
+
+                    addData(accelChart, timeLabel, [giaToc]);
+                    addData(angleChart, timeLabel, [gocPitch, gocRoll]);
+                } catch (e) {
+                    console.error("Lỗi JSON:", e);
+                }
+            }
+        });
+
+        function addData(chart, label, dataPoints) {
+            chart.data.labels.push(label);
+            chart.data.datasets.forEach((dataset, index) => {
+                dataset.data.push(dataPoints[index]);
+            });
+            if (chart.data.labels.length > 15) {
+                chart.data.labels.shift();
+                chart.data.datasets.forEach(dataset => dataset.data.shift());
+            }
+            chart.update();
+        }
+
+        function toggleLED() {
+            ledState = !ledState;
+            client.publish('falldetect/control/led', ledState ? 'ON' : 'OFF');
+            const btn = document.querySelector('.btn-led');
+            btn.classList.toggle('active-led', ledState);
+        }
+
+        function toggleBuzzer() {
+            buzzerState = !buzzerState;
+            client.publish('falldetect/control/buzzer', buzzerState ? 'ON' : 'OFF');
+            const btn = document.querySelector('.btn-buzzer');
+            btn.classList.toggle('active-buzzer', buzzerState);
+        }
+    </script>
+</body>
+</html>
